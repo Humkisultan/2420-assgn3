@@ -93,7 +93,7 @@ This guide outlines the steps to set up a server with a system user, automated s
 ### Steps:
 1. Update the main Nginx configuration file to run as the `webgen` user:
    ```bash
-   sudo nano /etc/nginx/nginx.conf
+   sudo nvim /etc/nginx/nginx.conf
    ```
    Modify the `user` directive:
    ```
@@ -102,7 +102,7 @@ This guide outlines the steps to set up a server with a system user, automated s
 
 2. Create a server block configuration file:
    ```bash
-   sudo nano /etc/nginx/conf.d/server-block.conf
+   sudo nvim /etc/nginx/conf.d/server-block.conf
    ```
    Contents:
    ```
