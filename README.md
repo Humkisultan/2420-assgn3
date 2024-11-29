@@ -1,150 +1,197 @@
 # Assignment 3 - Part 1
 
-# Server Setup and Configuration
+# Server Setup and Configuration Guide
 
-This repository contains the necessary files and instructions to set up and configure a server with the following features:
-
-- Automated generation of an HTML index file via a systemd service and timer.
-- Nginx web server configured to serve the generated HTML file.
-- UFW firewall rules for security.
+This guide outlines the steps to set up a server with a system user, automated service, and a web server to display system information. 
 
 
 
-## Prerequisites
+## Task 1: Create the System User
 
-1. **Server Requirements**:
-   - Linux-based server (tested on Arch Linux).
-   - Root or sudo access.
+### Steps:
+1. Create a system user `webgen` with a home directory at `/var/lib/webgen` and a non-login shell:
+   ```bash
+   sudo useradd -r -d /var/lib/webgen -s /usr/bin/nologin webgen
+   ```
+2. Ensure the `webgen` user owns its home directory and all subdirectories:
+   ```bash
+   sudo mkdir -p /var/lib/webgen/{bin,HTML}
+   sudo chown -R webgen:webgen /var/lib/webgen
+   ```
 
-2. **Installed Tools**:
-   - `git`
-   - `nginx`
-   - `ufw`
-   - Systemd (default in most Linux distributions).
-
-
-
-## Setup Instructions
-
-### 1. Clone the Repository
-Clone this repository to the server:
-```bash
-git clone <repository-url> /home/<user>/server-setup
-cd /home/<user>/server-setup
+### Directory Structure:
+```
+/var/lib/webgen/
+├── bin/
+│   └── generate_index
+└── HTML/
+    └── index.html
 ```
 
-### 2. Deploy Systemd Service and Timer
-#### Files:
+### Benefits of Using a System User:
+- **Security:** A non-login system user restricts interactive logins, reducing attack surface.
+- **Segregation:** Limits access to specific tasks and files, preventing accidental or malicious actions.
+- **Best Practices:** Ensures the server adheres to the principle of least privilege.
+
+
+
+## Task 2: Automate the Index Generation
+
+### Files:
 - `generate-index.service`
 - `generate-index.timer`
 
+### Steps:
+1. Create the service file at `/etc/systemd/system/generate-index.service`:
+   ```ini
+   [Unit]
+   Description=Generate index.html for system information
+   After=network-online.target
+   Wants=network-online.target
 
-#### Steps:
-1. Copy the service and timer files to `/etc/systemd/system`:
-   ```bash
-   sudo cp systemd/generate-index.service /etc/systemd/system/
-   sudo cp systemd/generate-index.timer /etc/systemd/system/
+   [Service]
+   User=webgen
+   Group=webgen
+   ExecStart=/var/lib/webgen/bin/generate_index
+
+   [Install]
+   WantedBy=multi-user.target
    ```
-2. Reload systemd to recognize new files:
-   ```bash
-   sudo systemctl daemon-reload
+2. Create the timer file at `/etc/systemd/system/generate-index.timer`:
+   ```ini
+   [Unit]
+   Description=Run generate-index.service daily at 05:00
+
+   [Timer]
+   OnCalendar=*-*-* 05:00:00
+   Persistent=true
+
+   [Install]
+   WantedBy=timers.target
    ```
 3. Enable and start the timer:
    ```bash
+   sudo systemctl daemon-reload
    sudo systemctl enable generate-index.timer
    sudo systemctl start generate-index.timer
    ```
-4. Test the service directly:
+
+### Verification:
+- Check the timer status:
+  ```bash
+  sudo systemctl list-timers --all
+  ```
+- View service logs:
+  ```bash
+  sudo journalctl -u generate-index.service
+  ```
+
+
+
+## Task 3: Configure Nginx
+
+### Steps:
+1. Update the main Nginx configuration file to run as the `webgen` user:
    ```bash
-   sudo systemctl start generate-index.service
+   sudo nano /etc/nginx/nginx.conf
+   ```
+   Modify the `user` directive:
+   ```
+   user webgen;
    ```
 
-
-
-### 3. Nginx Configuration
-#### Files:
-- `nginx.conf` (main configuration file)
-- `server-block.conf` (server block configuration)
-
-#### Steps:
-1. Replace the default Nginx configuration file:
+2. Create a server block configuration file:
    ```bash
-   sudo cp config/nginx.conf /etc/nginx/nginx.conf
+   sudo nano /etc/nginx/conf.d/server-block.conf
    ```
-2. Copy the server block file:
-   ```bash
-   sudo cp config/server-block.conf /etc/nginx/conf.d/
+   Contents:
    ```
+   server {
+       listen 80;
+       server_name <your_server_ip>;
+
+       root /var/lib/webgen/HTML;
+       index index.html;
+
+       location / {
+           try_files $uri $uri/ =404;
+       }
+
+       error_page 404 /404.html;
+   }
+   ```
+
 3. Test and reload Nginx:
    ```bash
    sudo nginx -t
    sudo systemctl restart nginx
    ```
 
+### Why Use a Separate Server Block?
+- **Maintainability:** Keeps the main configuration clean and modular.
+- **Best Practices:** Easier to isolate, manage, and troubleshoot individual configurations.
+
+### Checking Nginx:
+- View service status:
+  ```bash
+  sudo systemctl status nginx
+  ```
+- Test the configuration:
+  ```bash
+  sudo nginx -t
+  ```
 
 
-### 4. Firewall Configuration
-1. Install UFW if not already installed:
+
+## Task 4: Set Up the Firewall
+
+### Steps:
+1. Install UFW:
    ```bash
    sudo pacman -S ufw
    ```
-2. Allow necessary ports:
+2. Configure rules:
    ```bash
    sudo ufw allow ssh
    sudo ufw allow http
-   ```
-3. Enable SSH rate limiting:
-   ```bash
    sudo ufw limit ssh
    ```
-4. Enable the firewall:
+3. Enable UFW:
    ```bash
    sudo ufw enable
    ```
 
+### Verification:
+- Check firewall status:
+  ```bash
+  sudo ufw status verbose
+  ```
 
 
-### 5. Verify the Setup
-1. Confirm that the service generates the `index.html` file:
-   ```bash
-   ls /var/lib/webgen/HTML
+
+## Task 5: Verify the Server
+
+1. Visit your server's IP address in a browser:
    ```
-2. Test Nginx:
-   - Visit `http://<server-ip>` in a browser.
-   - Use `curl` to verify:
-     ```bash
-     curl http://<server-ip>
-     ```
-
-
-
-## Directory Structure
-
-```
-server-setup/
-├── config/
-│   ├── nginx.conf
-│   ├── server-block.conf
-├── scripts/
-│   └── generate_index
-├── systemd/
-│   ├── generate-index.service
-│   ├── generate-index.timer
-└── README.md
-```
+   http://<your_server_ip>
+   ```
+2. Take a screenshot of the system information page showing your IP and the HTML content.
+3. Submit your server's IP address to confirm functionality.
 
 
 
 ## Notes
-- Replace `<server-ip>` with your server's IP address.
-- Ensure the `generate_index` script is executable:
+- Ensure the `generate_index` script in `/var/lib/webgen/bin` is executable:
   ```bash
-  chmod +x scripts/generate_index
+  chmod +x /var/lib/webgen/bin/generate_index
   ```
-- For troubleshooting, check logs:
+- Use `journalctl` for logs:
   ```bash
-  sudo journalctl -u generate-index.service
   sudo journalctl -u nginx.service
+  sudo journalctl -u generate-index.service
+  ```
+- Test with `curl`:
+  ```bash
+  curl http://<your_server_ip>
   ```
 ```
-
